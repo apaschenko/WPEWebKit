@@ -173,6 +173,11 @@ void CoordinatedLayerTreeHost::renderNextFrame()
     }
 }
 
+void CoordinatedLayerTreeHost::commitScrollOffset(uint32_t layerID, const WebCore::IntSize& offset)
+{
+    m_coordinator.commitScrollOffset(layerID, offset);
+}
+
 void CoordinatedLayerTreeHost::didFlushRootLayer(const FloatRect& visibleContentRect)
 {
     // Because our view-relative overlay root layer is not attached to the FrameView's GraphicsLayer tree, we need to flush it manually.
@@ -234,16 +239,6 @@ void CoordinatedLayerTreeHost::scheduleAnimation()
 
     scheduleLayerFlush();
     m_layerFlushTimer.startOneShot(1_s * m_coordinator.nextAnimationServiceTime());
-}
-
-void CoordinatedLayerTreeHost::commitScrollOffset(uint32_t layerID, const WebCore::IntSize& offset)
-{
-    m_coordinator.commitScrollOffset(layerID, offset);
-}
-
-void CoordinatedLayerTreeHost::clearUpdateAtlases()
-{
-    m_coordinator.clearUpdateAtlases();
 }
 
 } // namespace WebKit
