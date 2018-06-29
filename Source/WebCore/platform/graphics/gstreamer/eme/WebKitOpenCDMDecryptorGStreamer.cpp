@@ -26,7 +26,6 @@
 #if ENABLE(ENCRYPTED_MEDIA) && USE(GSTREAMER) && USE(OPENCDM)
 
 #include "CDMOpenCDM.h"
-#include <GStreamerCommon.h>
 #include <open_cdm.h>
 #include <wtf/text/WTFString.h>
 #include <wtf/Lock.h>
@@ -180,35 +179,39 @@ static bool webKitMediaOpenCDMDecryptorAttemptToDecryptWithLocalInstance(WebKitM
 
 static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecrypt* self, GstBuffer* keyIDBuffer, GstBuffer* ivBuffer, GstBuffer* buffer, unsigned subSampleCount, GstBuffer* subSamplesBuffer)
 {
-    GstMappedBuffer mappedIV(ivBuffer, GST_MAP_READ);
-    if (!mappedIV) {
+    GstMapInfo ivMap;
+    if (!gst_buffer_map(ivBuffer, &ivMap, GST_MAP_READ)) {
         GST_ERROR_OBJECT(self, "Failed to map IV");
         return false;
     }
+    GST_MEMDUMP_OBJECT(self, "IV for sample", ivMap.data, ivMap.size);
 
-    GST_MEMDUMP_OBJECT(self, "IV for sample", mappedIV.data(), mappedIV.size());
-
-    GstMappedBuffer mappedBuffer(buffer, GST_MAP_READWRITE);
-    if (!mappedBuffer) {
+    GstMapInfo map;
+    if (!gst_buffer_map(buffer, &map, static_cast<GstMapFlags>(GST_MAP_READWRITE))) {
+        gst_buffer_unmap(ivBuffer, &ivMap);
         GST_ERROR_OBJECT(self, "Failed to map buffer");
         return false;
     }
 
-    GstMappedBuffer mappedKeyID(keyIDBuffer, GST_MAP_READ);
-    if (!mappedKeyID) {
+    GstMapInfo keyIDBufferMap;
+    if (!gst_buffer_map(keyIDBuffer, &keyIDBufferMap, GST_MAP_READ)) {
+        gst_buffer_unmap(ivBuffer, &ivMap);
+        gst_buffer_unmap(buffer, &map);
         GST_ERROR_OBJECT(self, "Failed to map key ID buffer");
         return false;
     }
 
     int errorCode;
+    bool returnValue = true;
     if (subSamplesBuffer) {
-        GstMappedBuffer mappedSubSamples(subSamplesBuffer, GST_MAP_READ);
-        if (!mappedSubSamples) {
+        GstMapInfo subSamplesMap;
+        if (!gst_buffer_map(subSamplesBuffer, &subSamplesMap, GST_MAP_READ)) {
             GST_ERROR_OBJECT(self, "Failed to map subsample buffer");
-            return false;
+            returnValue = false;
+            goto beach;
         }
 
-        GUniquePtr<GstByteReader> reader(gst_byte_reader_new(mappedSubSamples.data(), mappedSubSamples.size()));
+        GUniquePtr<GstByteReader> reader(gst_byte_reader_new(subSamplesMap.data, subSamplesMap.size));
         uint16_t inClear = 0;
         uint32_t inEncrypted = 0;
         uint32_t totalEncrypted = 0;
@@ -228,7 +231,7 @@ static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecryp
         for (position = 0; position < subSampleCount; position++) {
             gst_byte_reader_get_uint16_be(reader.get(), &inClear);
             gst_byte_reader_get_uint32_be(reader.get(), &inEncrypted);
-            memcpy(encryptedData, mappedBuffer.data() + index + inClear, inEncrypted);
+            memcpy(encryptedData, map.data + index + inClear, inEncrypted);
             index += inClear + inEncrypted;
             encryptedData += inEncrypted;
         }
@@ -236,11 +239,13 @@ static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecryp
 
         // Decrypt cipher.
         GST_TRACE_OBJECT(self, "decrypting (subsample)");
-        auto decryptor = std::make_unique<media::OpenCdm>(mappedKeyID.data(), mappedKeyID.size());
+        auto decryptor = std::make_unique<media::OpenCdm>(keyIDBufferMap.data, keyIDBufferMap.size);
         if ((errorCode = decryptor->Decrypt(holdEncryptedData.get(), static_cast<uint32_t>(totalEncrypted),
-            mappedIV.data(), static_cast<uint32_t>(mappedIV.size())))) {
+            ivMap.data, static_cast<uint32_t>(ivMap.size)))) {
             GST_WARNING_OBJECT(self, "ERROR - packet decryption failed [%d]", errorCode);
-            return false;
+            gst_buffer_unmap(subSamplesBuffer, &subSamplesMap);
+            returnValue = false;
+            goto beach;
         }
 
         // Re-build sub-sample data.
@@ -251,19 +256,27 @@ static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecryp
             gst_byte_reader_get_uint16_be(reader.get(), &inClear);
             gst_byte_reader_get_uint32_be(reader.get(), &inEncrypted);
 
-            memcpy(mappedBuffer.data() + total + inClear, encryptedData + index, inEncrypted);
+            memcpy(map.data + total + inClear, encryptedData + index, inEncrypted);
             index += inEncrypted;
             total += inClear + inEncrypted;
         }
+
+        gst_buffer_unmap(subSamplesBuffer, &subSamplesMap);
     } else {
+        // Decrypt cipher.
         GST_TRACE_OBJECT(self, "decrypting (no subsamples)");
-        auto decryptor = std::make_unique<media::OpenCdm>(mappedKeyID.data(), mappedKeyID.size());
-        if ((errorCode = decryptor->Decrypt(mappedBuffer.data(), static_cast<uint32_t>(mappedBuffer.size()), mappedIV.data(), static_cast<uint32_t>(mappedIV.size())))) {
+        auto decryptor = std::make_unique<media::OpenCdm>(keyIDBufferMap.data, keyIDBufferMap.size);
+        if ((errorCode = decryptor->Decrypt(map.data, static_cast<uint32_t>(map.size),
+            ivMap.data, static_cast<uint32_t>(ivMap.size)))) {
             GST_WARNING_OBJECT(self, "ERROR - packet decryption failed [%d]", errorCode);
-            return false;
+            returnValue = false;
+            goto beach;
         }
     }
 
-    return true;
+beach:
+    gst_buffer_unmap(buffer, &map);
+    gst_buffer_unmap(ivBuffer, &ivMap);
+    return returnValue;
 }
 #endif // ENABLE(ENCRYPTED_MEDIA) && USE(GSTREAMER) && USE(OPENCDM)

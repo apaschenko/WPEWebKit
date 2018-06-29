@@ -1268,16 +1268,17 @@ void MediaPlayerPrivateGStreamerBase::handleProtectionStructure(const GstStructu
     GRefPtr<GstBuffer> data;
     gst_structure_get(structure, "init-data", GST_TYPE_BUFFER, &data.outPtr(), "key-system-uuid", G_TYPE_STRING, &keySystemUUID.outPtr(), nullptr);
 
-    GstMappedBuffer mappedInitData(data.get(), GST_MAP_READ);
-    if (!mappedInitData) {
+    GstMapInfo mapInfo;
+    if (!gst_buffer_map(data.get(), &mapInfo, GST_MAP_READ)) {
         GST_WARNING("cannot map protection data");
         return;
     }
 
     String keySystemUUIDString = keySystemUUID ? keySystemUUID.get() : "(unspecified)";
-    InitData initData(mappedInitData.data(), mappedInitData.size());
-    GST_TRACE("init data encountered for %s of size %" G_GSIZE_FORMAT " with MD5 %s", keySystemUUIDString.utf8().data(), mappedInitData.size(), GStreamerEMEUtilities::initDataMD5(initData));
-    GST_MEMDUMP("init data", mappedInitData.data(), mappedInitData.size());
+    GST_TRACE("init data encountered for %s of size %" G_GSIZE_FORMAT " with MD5 %s", keySystemUUIDString.utf8().data(), mapInfo.size, GStreamerEMEUtilities::initDataMD5(InitData(reinterpret_cast<const uint8_t*>(mapInfo.data), mapInfo.size)).utf8().data());
+    GST_MEMDUMP("init data", reinterpret_cast<const uint8_t*>(mapInfo.data), mapInfo.size);
+    InitData initData(reinterpret_cast<const uint8_t*>(mapInfo.data), mapInfo.size);
+    gst_buffer_unmap(data.get(), &mapInfo);
 
     RunLoop::main().dispatch([weakThis = m_weakPtrFactory.createWeakPtr(*this), keySystemUUID = keySystemUUIDString, initData] {
         if (!weakThis)
