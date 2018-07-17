@@ -75,8 +75,6 @@ static void webkit_media_common_encryption_decrypt_class_init(WebKitMediaCommonE
 
     klass->setupCipher = [](WebKitMediaCommonEncryptionDecrypt*, GstBuffer*) { return true; };
     klass->releaseCipher = [](WebKitMediaCommonEncryptionDecrypt*) { };
-    klass->handleInitData = [](WebKitMediaCommonEncryptionDecrypt*, const WebCore::InitData&) { return true; };
-    klass->attemptToDecryptWithLocalInstance = [](WebKitMediaCommonEncryptionDecrypt*, const WebCore::InitData&) { return false; };
 
     g_type_class_add_private(klass, sizeof(WebKitMediaCommonEncryptionDecryptPrivate));
 }
@@ -478,7 +476,7 @@ static gboolean webkitMediaCommonEncryptionDecryptSinkEventHandler(GstBaseTransf
             gst_event_unref(event);
             result = TRUE;
             LockHolder locker(priv->m_mutex);
-            priv->m_keyReceived = klass->attemptToDecryptWithLocalInstance(self, priv->m_initDatas.get(WebCore::GStreamerEMEUtilities::keySystemToUuid(priv->m_cdmInstance->keySystem())));
+            priv->m_keyReceived = true;
             GST_DEBUG_OBJECT(self, "attempted to decrypt with local instance %p, key received %s", priv->m_cdmInstance.get(), WTF::boolForPrinting(priv->m_keyReceived));
             if (priv->m_keyReceived)
                 priv->m_condition.notifyOne();
