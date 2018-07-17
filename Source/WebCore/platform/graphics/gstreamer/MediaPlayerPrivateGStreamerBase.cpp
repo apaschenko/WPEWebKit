@@ -1296,8 +1296,10 @@ void MediaPlayerPrivateGStreamerBase::cdmInstanceAttached(const CDMInstance& ins
 {
     ASSERT(isMainThread());
     GST_DEBUG("CDM instance %p set", &instance);
-    m_cdmInstance = &instance;
-    dispatchLocalCDMInstance();
+    if (m_cdmInstance != &instance) {
+        m_cdmInstance = &instance;
+        dispatchLocalCDMInstance();
+    }
 }
 
 void MediaPlayerPrivateGStreamerBase::dispatchLocalCDMInstance()

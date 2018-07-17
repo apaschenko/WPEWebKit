@@ -455,13 +455,10 @@ static gboolean webkitMediaCommonEncryptionDecryptSinkEventHandler(GstBaseTransf
             result = TRUE;
             ASSERT(cdmInstance);
             LockHolder locker(priv->m_mutex);
-            if (priv->m_cdmInstance != cdmInstance) {
-                GST_INFO_OBJECT(self, "got new CDMInstance %p attached (ours was %p), clearing state", cdmInstance, priv->m_cdmInstance.get());
-                webKitMediaCommonEncryptionDecryptorPrivClearStateWithInstance(priv, cdmInstance);
-                if (!priv->m_pendingProtectionEvents.isEmpty())
-                    webkitMediaCommonEncryptionDecryptProcessPendingProtectionEvents(self);
-            } else
-                GST_TRACE_OBJECT(self, "got attach CDMInstance for the same instance %p we already have", cdmInstance);
+            GST_INFO_OBJECT(self, "got new CDMInstance %p attached (ours was %p), clearing state", cdmInstance, priv->m_cdmInstance.get());
+            webKitMediaCommonEncryptionDecryptorPrivClearStateWithInstance(priv, cdmInstance);
+            if (!priv->m_pendingProtectionEvents.isEmpty())
+            webkitMediaCommonEncryptionDecryptProcessPendingProtectionEvents(self);
         } else if (gst_structure_has_name(structure, "drm-cdm-instance-detached")) {
             WebCore::CDMInstance* cdmInstance = nullptr;
             gst_structure_get(structure, "cdm-instance", G_TYPE_POINTER, &cdmInstance, nullptr);
