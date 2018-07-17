@@ -35,15 +35,11 @@
 #define GST_WEBKIT_OPENCDM_DECRYPT_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), WEBKIT_TYPE_OPENCDM_DECRYPT, WebKitOpenCDMDecryptPrivate))
 
 struct _WebKitOpenCDMDecryptPrivate {
-    String m_session;
-    std::unique_ptr<media::OpenCdm> m_openCdm;
     Lock m_mutex;
 };
 
 static void webKitMediaOpenCDMDecryptorFinalize(GObject*);
 static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecrypt*, GstBuffer* keyIDBuffer, GstBuffer* iv, GstBuffer* sample, unsigned subSamplesCount, GstBuffer* subSamples);
-static bool webKitMediaOpenCDMDecryptorHandleInitData(WebKitMediaCommonEncryptionDecrypt* self, const WebCore::InitData& initData);
-static bool webKitMediaOpenCDMDecryptorAttemptToDecryptWithLocalInstance(WebKitMediaCommonEncryptionDecrypt* self, const WebCore::InitData&);
 
 static const char* supportedMediaTypes[] = { "video/webm", "video/mp4", "audio/webm", "audio/mp4", "video/x-h264", "audio/mpeg", nullptr };
 
@@ -116,9 +112,7 @@ static void webkit_media_opencdm_decrypt_class_init(WebKitOpenCDMDecryptClass* k
         "Metrological");
 
     WebKitMediaCommonEncryptionDecryptClass* cencClass = WEBKIT_MEDIA_CENC_DECRYPT_CLASS(klass);
-    cencClass->handleInitData = GST_DEBUG_FUNCPTR(webKitMediaOpenCDMDecryptorHandleInitData);
     cencClass->decrypt = GST_DEBUG_FUNCPTR(webKitMediaOpenCDMDecryptorDecrypt);
-    cencClass->attemptToDecryptWithLocalInstance = GST_DEBUG_FUNCPTR(webKitMediaOpenCDMDecryptorAttemptToDecryptWithLocalInstance);
 
     g_type_class_add_private(klass, sizeof(WebKitOpenCDMDecryptPrivate));
 }
@@ -136,46 +130,6 @@ static void webKitMediaOpenCDMDecryptorFinalize(GObject* object)
     WebKitOpenCDMDecryptPrivate* priv = GST_WEBKIT_OPENCDM_DECRYPT_GET_PRIVATE(WEBKIT_OPENCDM_DECRYPT(object));
     priv->~WebKitOpenCDMDecryptPrivate();
     GST_CALL_PARENT(G_OBJECT_CLASS, finalize, (object));
-}
-
-static SessionResult webKitMediaOpenCDMDecryptorResetSessionFromInitDataIfNeeded(WebKitMediaCommonEncryptionDecrypt* self, const WebCore::InitData& initData)
-{
-    WebKitOpenCDMDecryptPrivate* priv = GST_WEBKIT_OPENCDM_DECRYPT_GET_PRIVATE(WEBKIT_OPENCDM_DECRYPT(self));
-
-    LockHolder locker(priv->m_mutex);
-    RefPtr<WebCore::CDMInstance> cdmInstance = webKitMediaCommonEncryptionDecryptCDMInstance(self);
-    ASSERT(cdmInstance && is<WebCore::CDMInstanceOpenCDM>(*cdmInstance));
-    auto& cdmInstanceOpenCDM = downcast<WebCore::CDMInstanceOpenCDM>(*cdmInstance);
-
-    SessionResult returnValue = InvalidSession;
-    String session = cdmInstanceOpenCDM.sessionIdByInitData(initData);
-    if (session.isEmpty() || !cdmInstanceOpenCDM.isSessionIdUsable(session)) {
-        GST_DEBUG_OBJECT(self, "session %s is empty or unusable, resetting", session.utf8().data());
-        priv->m_session = String();
-        priv->m_openCdm = nullptr;
-    } else if (session != priv->m_session) {
-        priv->m_session = session;
-        priv->m_openCdm = std::make_unique<media::OpenCdm>(priv->m_session.utf8().data());
-        GST_DEBUG_OBJECT(self, "new session %s is usable", session.utf8().data());
-        returnValue = NewSession;
-    } else {
-        GST_DEBUG_OBJECT(self, "same session %s", session.utf8().data());
-        returnValue = OldSession;
-    }
-
-    return returnValue;
-}
-
-static bool webKitMediaOpenCDMDecryptorHandleInitData(WebKitMediaCommonEncryptionDecrypt* self, const WebCore::InitData& initData)
-{
-    GST_TRACE_OBJECT(self, "handling init data of size %u and MD5 %s", initData.sizeInBytes(), WebCore::GStreamerEMEUtilities::initDataMD5(initData).utf8().data());
-    return webKitMediaOpenCDMDecryptorResetSessionFromInitDataIfNeeded(self, initData) == InvalidSession;
-}
-
-static bool webKitMediaOpenCDMDecryptorAttemptToDecryptWithLocalInstance(WebKitMediaCommonEncryptionDecrypt* self, const WebCore::InitData& initData)
-{
-    GST_TRACE_OBJECT(self, "attempting to decrypt with local instance and init data of size %u and MD5 %s", initData.sizeInBytes(), WebCore::GStreamerEMEUtilities::initDataMD5(initData).utf8().data());
-    return webKitMediaOpenCDMDecryptorResetSessionFromInitDataIfNeeded(self, initData) != InvalidSession;
 }
 
 static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecrypt* self, GstBuffer* keyIDBuffer, GstBuffer* ivBuffer, GstBuffer* buffer, unsigned subSampleCount, GstBuffer* subSamplesBuffer)
