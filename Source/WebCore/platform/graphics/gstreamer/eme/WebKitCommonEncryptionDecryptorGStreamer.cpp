@@ -28,6 +28,7 @@
 #include "GStreamerEMEUtilities.h"
 #include <CDMInstance.h>
 #include <wtf/Condition.h>
+#include <wtf/HashSet.h>
 #include <wtf/PrintStream.h>
 #include <wtf/RunLoop.h>
 #include <wtf/text/StringHash.h>
@@ -40,7 +41,7 @@ struct _WebKitMediaCommonEncryptionDecryptPrivate {
     RefPtr<WebCore::CDMInstance> m_cdmInstance;
     WTF::HashMap<String, WebCore::InitData> m_initDatas;
     Vector<GRefPtr<GstEvent>> m_pendingProtectionEvents;
-    uint32_t m_currentEvent { 0 };
+    WTF::HashSet<WebCore::InitData> m_processedEventData;
 };
 
 static GstStateChangeReturn webKitMediaCommonEncryptionDecryptorChangeState(GstElement*, GstStateChange transition);
@@ -347,61 +348,28 @@ static void webkitMediaCommonEncryptionDecryptProcessPendingProtectionEvents(Web
 
         GST_TRACE_OBJECT(self, "handling protection event %u for %s", GST_EVENT_SEQNUM(event.get()), eventKeySystemUUID);
 
-        if (priv->m_cdmInstance && g_strcmp0(eventKeySystemUUID, WebCore::GStreamerEMEUtilities::keySystemToUuid(priv->m_cdmInstance->keySystem()))) {
-            GST_TRACE_OBJECT(self, "protection event for a different key system");
+        GstMappedBuffer mappedBuffer(buffer, GST_MAP_READ);
+        if (!mappedBuffer) {
+            GST_WARNING_OBJECT(self, "cannot map protection data");
             continue;
         }
+        WebCore::InitData initData = WebCore::InitData(mappedBuffer.data(), mappedBuffer.size());
 
-        if (priv->m_currentEvent == GST_EVENT_SEQNUM(event.get())) {
-            GST_TRACE_OBJECT(self, "event %u already handled", priv->m_currentEvent);
+        if (priv->m_processedEventData.contains(initData)) {
+            GST_TRACE_OBJECT(self, "event %u already handled", GST_EVENT_SEQNUM(event.get()));
             continue;
         }
+        priv->m_processedEventData.add(initData);
+        GST_DEBUG_OBJECT(self, "init data of size %u", mappedBuffer.size());
+        GST_TRACE_OBJECT(self, "init data MD5 %s", WebCore::GStreamerEMEUtilities::initDataMD5(initData).utf8().data());
+        GST_MEMDUMP_OBJECT(self, "init data", mappedBuffer.data(), mappedBuffer.size());
 
-        WebCore::InitData initData;
-        if (priv->m_cdmInstance)
-            initData = priv->m_initDatas.get(WebCore::GStreamerEMEUtilities::keySystemToUuid(priv->m_cdmInstance->keySystem()));
-
-        priv->m_currentEvent = GST_EVENT_SEQNUM(event.get());
-
-        if (initData.isEmpty() || gst_buffer_memcmp(buffer, 0, initData.characters8(), initData.sizeInBytes())) {
-            GstMappedBuffer mappedBuffer(buffer, GST_MAP_READ);
-            if (!mappedBuffer) {
-                GST_WARNING_OBJECT(self, "cannot map protection data");
-                continue;
-            }
-
-            initData = WebCore::InitData(mappedBuffer.data(), mappedBuffer.size());
-            GST_DEBUG_OBJECT(self, "init data of size %u", mappedBuffer.size());
-            GST_TRACE_OBJECT(self, "init data MD5 %s", WebCore::GStreamerEMEUtilities::initDataMD5(initData).utf8().data());
-            GST_MEMDUMP_OBJECT(self, "init data", mappedBuffer.data(), mappedBuffer.size());
-            priv->m_initDatas.set(eventKeySystemUUID, initData);
-
-            priv->m_keyReceived = priv->m_cdmInstance && !klass->handleInitData(self, initData);
-            if (!priv->m_keyReceived) {
-                if (priv->m_cdmInstance) {
-                    GST_DEBUG_OBJECT(self, "posting event and considering key not received");
-                    gst_element_post_message(GST_ELEMENT(self), gst_message_new_element(GST_OBJECT(self),
-                        gst_structure_new("drm-initialization-data-encountered", "init-data", GST_TYPE_BUFFER, buffer, "key-system-uuid", G_TYPE_STRING, eventKeySystemUUID, nullptr)));
-                    break;
-                } else {
-                    GST_TRACE_OBJECT(self, "concatenating init data and considering key not received");
-                    priv->m_currentEvent = 0;
-                    concatenatedInitDatas.append(initData);
-                }
-            } else {
-                GST_DEBUG_OBJECT(self, "key is already usable");
-                priv->m_condition.notifyOne();
-                break;
-            }
-        } else {
-            GST_DEBUG_OBJECT(self, "init data already present");
-            break;
-        }
+        concatenatedInitDatas.append(initData);
     }
 
     priv->m_pendingProtectionEvents.clear();
 
-    if (!priv->m_cdmInstance && !concatenatedInitDatas.isEmpty()) {
+    if (!concatenatedInitDatas.isEmpty()) {
         GRefPtr<GstBuffer> buffer = adoptGRef(gst_buffer_new_allocate(nullptr, concatenatedInitDatas.sizeInBytes(), nullptr));
         GstMappedBuffer mappedBuffer(buffer.get(), GST_MAP_WRITE);
         if (!mappedBuffer) {
@@ -410,8 +378,7 @@ static void webkitMediaCommonEncryptionDecryptProcessPendingProtectionEvents(Web
         }
         memcpy(mappedBuffer.data(), concatenatedInitDatas.characters8(), concatenatedInitDatas.sizeInBytes());
         GST_DEBUG_OBJECT(self, "reporting concatenated init datas of size %u", concatenatedInitDatas.sizeInBytes());
-        GST_TRACE_OBJECT(self, "init data MD5 %s", WebCore::GStreamerEMEUtilities::initDataMD5(concatenatedInitDatas).utf8().data());
-        GST_MEMDUMP_OBJECT(self, "init data", reinterpret_cast<const uint8_t*>(concatenatedInitDatas.characters8()), concatenatedInitDatas.sizeInBytes());
+        GST_MEMDUMP_OBJECT(self, "concatenated init data", reinterpret_cast<const uint8_t*>(concatenatedInitDatas.characters8()), concatenatedInitDatas.sizeInBytes());
         gst_element_post_message(GST_ELEMENT(self), gst_message_new_element(GST_OBJECT(self), gst_structure_new("drm-initialization-data-encountered", "init-data", GST_TYPE_BUFFER, buffer.get(), nullptr)));
     }
 }
