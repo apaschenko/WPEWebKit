@@ -190,10 +190,13 @@ static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecryp
 
         // Decrypt cipher.
         GST_TRACE_OBJECT(self, "decrypting (subsample)");
-        auto decryptor = std::make_unique<media::OpenCdm>(mappedKeyID.data(), mappedKeyID.size());
-        if ((errorCode = decryptor->Decrypt(holdEncryptedData.get(), static_cast<uint32_t>(totalEncrypted),
-            mappedIV.data(), static_cast<uint32_t>(mappedIV.size())))) {
-            GST_WARNING_OBJECT(self, "ERROR - packet decryption failed [%d]", errorCode);
+        auto session = std::make_unique<media::OpenCdm>();
+        if (!session->GetSession(mappedKeyID.data(), mappedKeyID.size(), 6000)) {
+            GST_ERROR_OBJECT(self, "failed to get session", errorCode);
+            return false;
+        }
+        if ((errorCode = session->Decrypt(holdEncryptedData.get(), static_cast<uint32_t>(totalEncrypted), mappedIV.data(), static_cast<uint32_t>(mappedIV.size())))) {
+            GST_ERROR_OBJECT(self, "packet decryption failed: %d", errorCode);
             return false;
         }
 
@@ -211,9 +214,13 @@ static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecryp
         }
     } else {
         GST_TRACE_OBJECT(self, "decrypting (no subsamples)");
-        auto decryptor = std::make_unique<media::OpenCdm>(mappedKeyID.data(), mappedKeyID.size());
-        if ((errorCode = decryptor->Decrypt(mappedBuffer.data(), static_cast<uint32_t>(mappedBuffer.size()), mappedIV.data(), static_cast<uint32_t>(mappedIV.size())))) {
-            GST_WARNING_OBJECT(self, "ERROR - packet decryption failed [%d]", errorCode);
+        auto session = std::make_unique<media::OpenCdm>();
+        if (!session->GetSession(mappedKeyID.data(), mappedKeyID.size(), 6000)) {
+            GST_ERROR_OBJECT(self, "failed to get session", errorCode);
+            return false;
+        }
+        if ((errorCode = session->Decrypt(mappedBuffer.data(), static_cast<uint32_t>(mappedBuffer.size()), mappedIV.data(), static_cast<uint32_t>(mappedIV.size())))) {
+            GST_ERROR_OBJECT(self, "packet decryption failed: %d", errorCode);
             return false;
         }
     }
