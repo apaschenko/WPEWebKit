@@ -33,6 +33,7 @@ namespace WebCore {
 
 TextureMapperGC3DPlatformLayer::TextureMapperGC3DPlatformLayer(GraphicsContext3D& context, GraphicsContext3D::RenderStyle renderStyle, HostWindow* hostWindow)
     : m_context(context)
+    , m_renderStyle(renderStyle)
 {
     switch (renderStyle) {
     case GraphicsContext3D::RenderOffscreen:
