@@ -1271,16 +1271,13 @@ void MediaPlayerPrivateGStreamerBase::handleProtectionStructure(const GstStructu
         return;
     }
 
-    String keySystemUUIDString = keySystemUUID ? keySystemUUID.get() : "(unspecified)";
     InitData initData(mappedInitData.data(), mappedInitData.size());
-    GST_TRACE("init data encountered for %s of size %" G_GSIZE_FORMAT " with MD5 %s", keySystemUUIDString.utf8().data(), mappedInitData.size(), GStreamerEMEUtilities::initDataMD5(initData).utf8().data());
-    GST_MEMDUMP("init data", mappedInitData.data(), mappedInitData.size());
 
-    RunLoop::main().dispatch([weakThis = m_weakPtrFactory.createWeakPtr(*this), keySystemUUID = keySystemUUIDString, initData] {
+    RunLoop::main().dispatch([weakThis = m_weakPtrFactory.createWeakPtr(*this), initData] {
         if (!weakThis)
             return;
 
-        GST_DEBUG("scheduling initializationDataEncountered event for %s with init data size of %" G_GSIZE_FORMAT, keySystemUUID.utf8().data(), initData.sizeInBytes());
+        GST_DEBUG("scheduling initializationDataEncountered event with init data size of %" G_GSIZE_FORMAT, initData.sizeInBytes());
         GST_TRACE("init data MD5 %s", GStreamerEMEUtilities::initDataMD5(initData).utf8().data());
         GST_MEMDUMP("init datas", reinterpret_cast<const uint8_t*>(initData.characters8()), initData.sizeInBytes());
         weakThis->m_player->initializationDataEncountered(ASCIILiteral("cenc"), ArrayBuffer::create(reinterpret_cast<const uint8_t*>(initData.characters8()), initData.sizeInBytes()));

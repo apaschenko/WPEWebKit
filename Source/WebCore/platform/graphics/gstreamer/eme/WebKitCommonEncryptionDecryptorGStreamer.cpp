@@ -412,10 +412,8 @@ static void webkitMediaCommonEncryptionDecryptProcessPendingProtectionEvents(Web
             GST_WARNING_OBJECT(self, "cannot map writable init data");
             return;
         }
+        GST_TRACE_OBJECT(self, "posting drm-initialization-data-encountered message with init data of size %u", concatenatedInitDatas.sizeInBytes());
         memcpy(mappedBuffer.data(), concatenatedInitDatas.characters8(), concatenatedInitDatas.sizeInBytes());
-        GST_DEBUG_OBJECT(self, "reporting concatenated init datas of size %u", concatenatedInitDatas.sizeInBytes());
-        GST_TRACE_OBJECT(self, "init data MD5 %s", WebCore::GStreamerEMEUtilities::initDataMD5(concatenatedInitDatas).utf8().data());
-        GST_MEMDUMP_OBJECT(self, "init data", reinterpret_cast<const uint8_t*>(concatenatedInitDatas.characters8()), concatenatedInitDatas.sizeInBytes());
         gst_element_post_message(GST_ELEMENT(self), gst_message_new_element(GST_OBJECT(self), gst_structure_new("drm-initialization-data-encountered", "init-data", GST_TYPE_BUFFER, buffer.get(), nullptr)));
     }
 }
