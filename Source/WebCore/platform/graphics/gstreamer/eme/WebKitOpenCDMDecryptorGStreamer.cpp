@@ -47,6 +47,8 @@ static bool webKitMediaOpenCDMDecryptorAttemptToDecryptWithLocalInstance(WebKitM
 
 static const char* supportedMediaTypes[] = { "video/webm", "video/mp4", "audio/webm", "audio/mp4", "video/x-h264", "audio/mpeg", nullptr };
 
+static const WTF::Seconds keyIdTimeout = WTF::Seconds::fromMinutes(1);
+
 static GstStaticPadTemplate srcTemplate = GST_STATIC_PAD_TEMPLATE("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
@@ -127,6 +129,7 @@ static void webkit_media_opencdm_decrypt_init(WebKitOpenCDMDecrypt* self)
     WebKitOpenCDMDecryptPrivate* priv = GST_WEBKIT_OPENCDM_DECRYPT_GET_PRIVATE(self);
     self->priv = priv;
     new (priv) WebKitOpenCDMDecryptPrivate();
+    self->priv->m_openCdm = std::make_unique<media::OpenCdm>();
     GST_TRACE_OBJECT(self, "created");
 }
 
@@ -179,6 +182,8 @@ static bool webKitMediaOpenCDMDecryptorAttemptToDecryptWithLocalInstance(WebKitM
 
 static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecrypt* self, GstBuffer* keyIDBuffer, GstBuffer* ivBuffer, GstBuffer* buffer, unsigned subSampleCount, GstBuffer* subSamplesBuffer)
 {
+    WebKitOpenCDMDecryptPrivate* priv = GST_WEBKIT_OPENCDM_DECRYPT_GET_PRIVATE(self);
+
     GstMappedBuffer mappedIV(ivBuffer, GST_MAP_READ);
     if (!mappedIV) {
         GST_ERROR_OBJECT(self, "Failed to map IV");
@@ -234,11 +239,9 @@ static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecryp
         gst_byte_reader_set_pos(reader.get(), 0);
 
         // Decrypt cipher.
-        GST_TRACE_OBJECT(self, "decrypting (subsample)");
-        auto decryptor = std::make_unique<media::OpenCdm>(mappedKeyID.data(), mappedKeyID.size());
-        if ((errorCode = decryptor->Decrypt(holdEncryptedData.get(), static_cast<uint32_t>(totalEncrypted),
-            mappedIV.data(), static_cast<uint32_t>(mappedIV.size())))) {
-            GST_WARNING_OBJECT(self, "ERROR - packet decryption failed [%d]", errorCode);
+        GST_TRACE_OBJECT(self, "decrypting (subsample) %u",keyIdTimeout.millisecondsAs<uint32_t>());
+        if ((errorCode = priv->m_openCdm->Decrypt(holdEncryptedData.get(), static_cast<uint32_t>(totalEncrypted), mappedIV.data(), static_cast<uint32_t>(mappedIV.size()), mappedKeyID.size(), mappedKeyID.data(), keyIdTimeout.millisecondsAs<uint32_t>()))) {
+            GST_ERROR_OBJECT(self, "subsample decryption failed, error code %d", errorCode);
             return false;
         }
 
@@ -255,10 +258,10 @@ static bool webKitMediaOpenCDMDecryptorDecrypt(WebKitMediaCommonEncryptionDecryp
             total += inClear + inEncrypted;
         }
     } else {
-        GST_TRACE_OBJECT(self, "decrypting (no subsamples)");
-        auto decryptor = std::make_unique<media::OpenCdm>(mappedKeyID.data(), mappedKeyID.size());
-        if ((errorCode = decryptor->Decrypt(mappedBuffer.data(), static_cast<uint32_t>(mappedBuffer.size()), mappedIV.data(), static_cast<uint32_t>(mappedIV.size())))) {
-            GST_WARNING_OBJECT(self, "ERROR - packet decryption failed [%d]", errorCode);
+        GST_TRACE_OBJECT(self, "decrypting (no subsamples) %u", keyIdTimeout.millisecondsAs<uint32_t>());
+
+        if ((errorCode = priv->m_openCdm->Decrypt(mappedBuffer.data(), static_cast<uint32_t>(mappedBuffer.size()), mappedIV.data(), static_cast<uint32_t>(mappedIV.size()), mappedKeyID.size(), mappedKeyID.data(), keyIdTimeout.millisecondsAs<uint32_t>()))) {
+            GST_ERROR_OBJECT(self, "decryption failed, error code %d", errorCode);
             return false;
         }
     }

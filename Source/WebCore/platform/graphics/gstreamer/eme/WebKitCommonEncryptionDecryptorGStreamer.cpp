@@ -241,7 +241,7 @@ static GstFlowReturn webkitMediaCommonEncryptionDecryptTransformInPlace(GstBaseT
             GST_ERROR_OBJECT(self, "can't process key requests in less than PAUSED state");
             return GST_FLOW_NOT_SUPPORTED;
         }
-        if (!priv->m_condition.waitFor(priv->m_mutex, WEBCORE_GSTREAMER_EME_LICENSE_KEY_RESPONSE_TIMEOUT, [priv] { return priv->m_keyReceived; })) {
+        if (!priv->m_condition.waitFor(priv->m_mutex, 6_s, [priv] { return priv->m_keyReceived; })) {
             GST_ERROR_OBJECT(self, "key not available");
             return GST_FLOW_NOT_SUPPORTED;
         }
@@ -465,7 +465,7 @@ static gboolean webkitMediaCommonEncryptionDecryptSinkEventHandler(GstBaseTransf
                 if (!priv->m_pendingProtectionEvents.isEmpty())
                     webkitMediaCommonEncryptionDecryptProcessPendingProtectionEvents(self);
             } else
-                GST_TRACE_OBJECT(self, "got attach CDMInstance for the same instance %p we already have", cdmInstance);
+                GST_TRACE_OBJECT(self, "ignoring cdm-instance %p, we already have it", cdmInstance);
         } else if (gst_structure_has_name(structure, "drm-cdm-instance-detached")) {
             WebCore::CDMInstance* cdmInstance = nullptr;
             gst_structure_get(structure, "cdm-instance", G_TYPE_POINTER, &cdmInstance, nullptr);
@@ -475,9 +475,9 @@ static gboolean webkitMediaCommonEncryptionDecryptSinkEventHandler(GstBaseTransf
             LockHolder locker(priv->m_mutex);
             if (priv->m_cdmInstance == cdmInstance) {
                 webKitMediaCommonEncryptionDecryptorPrivClearStateWithInstance(priv, nullptr);
-                GST_INFO_OBJECT(self, "got CDMInstance %p detached and cleared state", cdmInstance);
+                GST_INFO_OBJECT(self, "our cdm-instance %p was detached, state cleared", cdmInstance);
             } else
-                GST_TRACE_OBJECT(self, "got detaching message for CDMInstance %p but ours is %p", cdmInstance, priv->m_cdmInstance.get());
+                GST_TRACE_OBJECT(self, "cdm-instance %p detached, ignored since ours was %p", cdmInstance, priv->m_cdmInstance.get());
         } else if (gst_structure_has_name(structure, "drm-attempt-to-decrypt-with-local-instance")) {
             gst_event_unref(event);
             result = TRUE;
