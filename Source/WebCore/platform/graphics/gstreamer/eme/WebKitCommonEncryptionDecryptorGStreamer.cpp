@@ -432,17 +432,16 @@ static gboolean webkitMediaCommonEncryptionDecryptSinkEventHandler(GstBaseTransf
         gst_event_parse_protection(event, &systemId, nullptr, nullptr);
         GST_TRACE_OBJECT(self, "received protection event %u for %s", GST_EVENT_SEQNUM(event), systemId);
 
-        LockHolder locker(priv->m_mutex);
-        priv->m_pendingProtectionEvents.append(event);
-        if (priv->m_cdmInstance)
-            webkitMediaCommonEncryptionDecryptProcessPendingProtectionEvents(self);
-        else {
-            GST_DEBUG_OBJECT(self, "protection event buffer kept for later because we have no CDMInstance yet");
-            if (priv->m_pendingProtectionEvents.size() == 1) {
+        {
+            LockHolder locker(priv->m_mutex);
+            priv->m_pendingProtectionEvents.append(event);
+        }
+
+        static std::once_flag onceFlag;
+        std::call_once(onceFlag, [self] {
                 GST_DEBUG_OBJECT(self, "requesting CDM instance");
                 gst_element_post_message(GST_ELEMENT(self), gst_message_new_element(GST_OBJECT(self), gst_structure_new_empty("drm-cdm-instance-needed")));
-            }
-        }
+            });
 
         result = TRUE;
         gst_event_unref(event);
