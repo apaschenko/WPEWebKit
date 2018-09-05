@@ -28,6 +28,7 @@
 #include "GStreamerEMEUtilities.h"
 #include <CDMInstance.h>
 #include <wtf/Condition.h>
+#include <wtf/HashSet.h>
 #include <wtf/PrintStream.h>
 #include <wtf/RunLoop.h>
 #include <wtf/text/StringHash.h>
@@ -38,7 +39,7 @@ struct _WebKitMediaCommonEncryptionDecryptPrivate {
     Lock m_mutex;
     Condition m_condition;
     RefPtr<WebCore::CDMInstance> m_cdmInstance;
-    WTF::HashMap<String, WebCore::InitData> m_initDatas;
+    WTF::HashSet<uint32_t> m_reportedProtectionEvents;
     Vector<GRefPtr<GstEvent>> m_pendingProtectionEvents;
     uint32_t m_currentEvent { 0 };
 };
@@ -109,10 +110,10 @@ static void webKitMediaCommonEncryptionDecryptorPrivClearStateWithInstance(WebKi
     ASSERT(priv->m_mutex.isLocked());
 
     // If this is the first CDM instance that has been set, do not
-    // clear out the old init datas, since doing so will trigger an
-    // invalid repeated onEncrypted event.
+    // clear out the old protection events, since doing so will
+    // trigger an invalid repeated onEncrypted event.
     if (priv->m_cdmInstance)
-        priv->m_initDatas.clear();
+        priv->m_reportedProtectionEvents.clear();
     priv->m_cdmInstance = cdmInstance;
     priv->m_keyReceived = false;
 }
@@ -351,61 +352,28 @@ static void webkitMediaCommonEncryptionDecryptProcessPendingProtectionEvents(Web
 
         GST_TRACE_OBJECT(self, "handling protection event %u for %s", GST_EVENT_SEQNUM(event.get()), eventKeySystemUUID);
 
-        if (priv->m_cdmInstance && g_strcmp0(eventKeySystemUUID, WebCore::GStreamerEMEUtilities::keySystemToUuid(priv->m_cdmInstance->keySystem()))) {
-            GST_TRACE_OBJECT(self, "protection event for a different key system");
+        if (priv->m_reportedProtectionEvents.contains(GST_EVENT_SEQNUM(event.get()))) {
+            GST_TRACE_OBJECT(self, "event %u already reported", priv->m_currentEvent);
             continue;
         }
 
-        if (priv->m_currentEvent == GST_EVENT_SEQNUM(event.get())) {
-            GST_TRACE_OBJECT(self, "event %u already handled", priv->m_currentEvent);
+        GstMappedBuffer mappedBuffer(buffer, GST_MAP_READ);
+        if (!mappedBuffer) {
+            GST_WARNING_OBJECT(self, "cannot map protection data");
             continue;
         }
 
-        WebCore::InitData initData;
-        if (priv->m_cdmInstance)
-            initData = priv->m_initDatas.get(WebCore::GStreamerEMEUtilities::keySystemToUuid(priv->m_cdmInstance->keySystem()));
-
-        priv->m_currentEvent = GST_EVENT_SEQNUM(event.get());
-
-        if (initData.isEmpty() || gst_buffer_memcmp(buffer, 0, initData.characters8(), initData.sizeInBytes())) {
-            GstMappedBuffer mappedBuffer(buffer, GST_MAP_READ);
-            if (!mappedBuffer) {
-                GST_WARNING_OBJECT(self, "cannot map protection data");
-                continue;
-            }
-
-            initData = WebCore::InitData(mappedBuffer.data(), mappedBuffer.size());
-            GST_DEBUG_OBJECT(self, "init data of size %u", mappedBuffer.size());
-            GST_TRACE_OBJECT(self, "init data MD5 %s", WebCore::GStreamerEMEUtilities::initDataMD5(initData).utf8().data());
-            GST_MEMDUMP_OBJECT(self, "init data", mappedBuffer.data(), mappedBuffer.size());
-            priv->m_initDatas.set(eventKeySystemUUID, initData);
-
-            priv->m_keyReceived = priv->m_cdmInstance && !klass->handleInitData(self, initData);
-            if (!priv->m_keyReceived) {
-                if (priv->m_cdmInstance) {
-                    GST_DEBUG_OBJECT(self, "posting event and considering key not received");
-                    gst_element_post_message(GST_ELEMENT(self), gst_message_new_element(GST_OBJECT(self),
-                        gst_structure_new("drm-initialization-data-encountered", "init-data", GST_TYPE_BUFFER, buffer, "key-system-uuid", G_TYPE_STRING, eventKeySystemUUID, nullptr)));
-                    break;
-                } else {
-                    GST_TRACE_OBJECT(self, "concatenating init data and considering key not received");
-                    priv->m_currentEvent = 0;
-                    concatenatedInitDatas.append(initData);
-                }
-            } else {
-                GST_DEBUG_OBJECT(self, "key is already usable");
-                priv->m_condition.notifyOne();
-                break;
-            }
-        } else {
-            GST_DEBUG_OBJECT(self, "init data already present");
-            break;
-        }
+        auto initData = WebCore::InitData(mappedBuffer.data(), mappedBuffer.size());
+        GST_DEBUG_OBJECT(self, "init data of size %u", mappedBuffer.size());
+        GST_TRACE_OBJECT(self, "init data MD5 %s", WebCore::GStreamerEMEUtilities::initDataMD5(initData).utf8().data());
+        GST_MEMDUMP_OBJECT(self, "init data", mappedBuffer.data(), mappedBuffer.size());
+        priv->m_reportedProtectionEvents.add(GST_EVENT_SEQNUM(event.get()));
+        concatenatedInitDatas.append(initData);
     }
 
     priv->m_pendingProtectionEvents.clear();
 
-    if (!priv->m_cdmInstance && !concatenatedInitDatas.isEmpty()) {
+    if (!concatenatedInitDatas.isEmpty()) {
         GRefPtr<GstBuffer> buffer = adoptGRef(gst_buffer_new_allocate(nullptr, concatenatedInitDatas.sizeInBytes(), nullptr));
         GstMappedBuffer mappedBuffer(buffer.get(), GST_MAP_WRITE);
         if (!mappedBuffer) {
@@ -479,7 +447,7 @@ static gboolean webkitMediaCommonEncryptionDecryptSinkEventHandler(GstBaseTransf
             gst_event_unref(event);
             result = TRUE;
             LockHolder locker(priv->m_mutex);
-            priv->m_keyReceived = klass->attemptToDecryptWithLocalInstance(self, priv->m_initDatas.get(WebCore::GStreamerEMEUtilities::keySystemToUuid(priv->m_cdmInstance->keySystem())));
+            priv->m_keyReceived = true; //klass->attemptToDecryptWithLocalInstance(self, priv->m_initDatas.get(WebCore::GStreamerEMEUtilities::keySystemToUuid(priv->m_cdmInstance->keySystem())));
             GST_DEBUG_OBJECT(self, "attempted to decrypt with local instance %p, key received %s", priv->m_cdmInstance.get(), WTF::boolForPrinting(priv->m_keyReceived));
             if (priv->m_keyReceived)
                 priv->m_condition.notifyOne();
