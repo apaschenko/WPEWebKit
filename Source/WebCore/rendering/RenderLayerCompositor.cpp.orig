@@ -27,10 +27,6 @@
 
 #include "RenderLayerCompositor.h"
 
-#include <string>
-#include <iostream>
-#include <fstream>
-
 #include "AnimationController.h"
 #include "CanvasRenderingContext.h"
 #include "CSSPropertyNames.h"
@@ -284,8 +280,6 @@ RenderLayerCompositor::RenderLayerCompositor(RenderView& renderView)
     , m_updateCompositingLayersTimer(*this, &RenderLayerCompositor::updateCompositingLayersTimerFired)
     , m_layerFlushTimer(*this, &RenderLayerCompositor::layerFlushTimerFired)
 {
-    Document *doc = renderView.frameView().frame().document();
-    m_enableYoutubeWorkarounds = doc && doc->origin().contains("www.youtube.com");
 }
 
 RenderLayerCompositor::~RenderLayerCompositor()
@@ -2606,9 +2600,6 @@ bool RenderLayerCompositor::requiresCompositingForAnimation(RenderLayerModelObje
     if (!(m_compositingTriggers & ChromeClient::AnimationTrigger))
         return false;
 
-    if (m_enableYoutubeWorkarounds && renderer.isCSSAnimating() && renderer.hasTransform())
-        return true;
-
     const AnimationBase::RunningState activeAnimationState = AnimationBase::Running | AnimationBase::Paused;
     AnimationController& animController = renderer.animation();
     return (animController.isRunningAnimationOnRenderer(renderer, CSSPropertyOpacity, activeAnimationState)
@@ -3697,12 +3688,6 @@ bool RenderLayerCompositor::layerHas3DContent(const RenderLayer& layer) const
 
 void RenderLayerCompositor::deviceOrPageScaleFactorChanged()
 {
-
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "RenderLayerCompositor.cpp: RenderLayerCompositor::deviceOrPageScaleFactorChanged == Changed!"
-<< std::endl;
-llog.close();
-
     // Page scale will only be applied at to the RenderView and sublayers, but the device scale factor
     // needs to be applied at the level of rootGraphicsLayer().
     GraphicsLayer* rootLayer = rootGraphicsLayer();

@@ -33,12 +33,6 @@
 #include <wpe/renderer-backend-egl.h>
 #include <stdio.h>
 
-
-#include <string>
-#include <iostream>
-#include <fstream>
-
-
 namespace WebCore {
 
 PlatformDisplayWPE::PlatformDisplayWPE() = default;
@@ -110,14 +104,6 @@ PlatformDisplayWPE::EGLTarget::~EGLTarget()
 
 void PlatformDisplayWPE::EGLTarget::initialize(const IntSize& size)
 {
-
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "PlatformDisplayWPE.cpp: PlatformDisplayWPE::EGLTarget::initialize === size.height: " << std::to_string(size.height())
-<< "size.width: " << std::to_string(size.width())
-<< std::endl;
-llog.close();
-
-
     wpe_renderer_backend_egl_target_initialize(m_backend, m_display.m_backend,
         std::max(0, size.width()), std::max(0, size.height()));
 }
@@ -129,13 +115,6 @@ std::unique_ptr<GLContextWPE> PlatformDisplayWPE::EGLTarget::createGLContext() c
 
 void PlatformDisplayWPE::EGLTarget::resize(const IntSize& size)
 {
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "PlatformDisplayWPE.cpp: PlatformDisplayWPE::EGLTarget::resize === size.height: " << std::to_string(size.height())
-<< "size.width: " << std::to_string(size.width())
-<< std::endl;
-llog.close();
-
-
     wpe_renderer_backend_egl_target_resize(m_backend, std::max(0, size.width()), std::max(0, size.height()));
 }
 

@@ -24,12 +24,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
-#include <string>
-#include <iostream> 
-#include <fstream>
-
-
 #include "config.h"
 #include "AcceleratedDrawingArea.h"
 
@@ -77,13 +71,6 @@ void AcceleratedDrawingArea::setNeedsDisplay()
 
 void AcceleratedDrawingArea::setNeedsDisplayInRect(const IntRect& rect)
 {
-
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "AcceleratedDwawingArea.cpp: AcceleratedDrawingArea::setNeedsDisplayInRect === rect.height: " << std::to_string(rect.height())
-<< "rect.width: " << std::to_string(rect.width())
-<< std::endl;
-llog.close();
-
     if (!m_isPaintingEnabled)
         return;
 
@@ -163,14 +150,6 @@ void AcceleratedDrawingArea::updatePreferences(const WebPreferencesStore& store)
 
 void AcceleratedDrawingArea::mainFrameContentSizeChanged(const IntSize& size)
 {
-
-
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "AcceleratedDwawingArea.cpp: AcceleratedDrawingArea::mainFrameContentSizeChanged === size.height: " << std::to_string(size.height())
-<< "size.width: " << std::to_string(size.width())
-<< std::endl;
-llog.close();
-
     if (m_webPage.useFixedLayout() && m_layerTreeHost)
         m_layerTreeHost->sizeDidChange(size);
     m_webPage.mainFrame()->pageOverlayController().didChangeDocumentSize();

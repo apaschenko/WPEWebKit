@@ -25,12 +25,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
-#include <string>
-#include <iostream> 
-#include <fstream>
-
-
 #include "config.h"
 #include "WebPage.h"
 
@@ -316,7 +310,7 @@ WebPage::WebPage(uint64_t pageID, const WebPageCreationParameters& parameters)
     , m_pdfPluginEnabled(false)
     , m_hasCachedWindowFrame(false)
     , m_viewGestureGeometryCollector(*this)
-#elif HAVE(ACCESSIBILITY) && (PLATFORM(GTK) || PLATFORM(EFL) || PLATFORM(WPE))
+#elif HAVE(ACCESSIBILITY) && (PLATFORM(GTK) || PLATFORM(EFL))
     , m_accessibilityObject(nullptr)
 #endif
     , m_setCanStartMediaTimer(RunLoop::main(), this, &WebPage::setCanStartMediaTimerFired)
@@ -1556,12 +1550,6 @@ void WebPage::windowScreenDidChange(uint32_t displayID)
 void WebPage::scalePage(double scale, const IntPoint& origin)
 {
     double totalScale = scale * viewScaleFactor();
-
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "WebPage.cpp: scalePage === page has been scaled to total: " << std::to_string(totalScale)
-<< std::endl;
-llog.close();
-
     bool willChangeScaleFactor = totalScale != totalScaleFactor();
 
 #if PLATFORM(IOS)
@@ -1605,12 +1593,6 @@ llog.close();
 void WebPage::scalePageInViewCoordinates(double scale, IntPoint centerInViewCoordinates)
 {
     double totalScale = scale * viewScaleFactor();
-
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "WebPage.cpp: scalePageInViewCoordinates === page has been scaled to total: " << std::to_string(totalScale)
-<< std::endl;
-llog.close();
-
     if (totalScale == totalScaleFactor())
         return;
 
@@ -1659,13 +1641,6 @@ void WebPage::scaleView(double scale)
 
 void WebPage::setDeviceScaleFactor(float scaleFactor)
 {
-
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "WebPage.cpp: setDeviceScaleFactor === device scale factor is: " << std::to_string(scaleFactor)
-<< std::endl;
-llog.close();
-
-
     if (scaleFactor == m_page->deviceScaleFactor())
         return;
 
@@ -1736,13 +1711,6 @@ void WebPage::setUseFixedLayout(bool fixed)
 
 bool WebPage::setFixedLayoutSize(const IntSize& size)
 {
-
-std::ofstream llog("/opt/logs/aa.log", std::ios_base::app);
-llog << "WebPage.cpp: WebPage::setFixedLayoutSize === size.height: " << std::to_string(size.height())
-<< ", size.width: " << std::to_string(size.width())
-<< std::endl;
-llog.close();
-
     FrameView* view = mainFrameView();
     if (!view || view->fixedLayoutSize() == size)
         return false;
@@ -2970,7 +2938,6 @@ void WebPage::updatePreferences(const WebPreferencesStore& store)
     m_artificialPluginInitializationDelayEnabled = store.getBoolValueForKey(WebPreferencesKey::artificialPluginInitializationDelayEnabledKey());
 
     m_scrollingPerformanceLoggingEnabled = store.getBoolValueForKey(WebPreferencesKey::scrollingPerformanceLoggingEnabledKey());
-    m_accessibilityEnabled = store.getBoolValueForKey(WebPreferencesKey::accessibilityEnabledKey());
 
 #if PLATFORM(COCOA)
     m_pdfPluginEnabled = store.getBoolValueForKey(WebPreferencesKey::pdfPluginEnabledKey());
